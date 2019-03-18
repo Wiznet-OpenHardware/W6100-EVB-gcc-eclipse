@@ -2,17 +2,22 @@
 
 #include "HALInit.h"
 #include "misc.h"
+#include "wizchip_conf.h"
 #include "stm32f10x_rcc.h"
 #include "stm32f10x_fsmc.h"
 #include "stm32f10x_gpio.h"
 #include "stm32f10x_usart.h"
 #include "stm32f10x_spi.h"
+#include "stm32f10x_dma.h"
 #include "stm32f10x_tim.h"
 #include "stm32f10x_exti.h"
 #include <stdio.h>
 
 
+extern DMA_InitTypeDef	DMA_RX_InitStructure, DMA_TX_InitStructure;
+
 volatile unsigned long globalTimer = 0;
+
 
 void HardFault_Handler(void)
 {
@@ -43,30 +48,48 @@ void UsageFault_Handler(void)
 	printf("Bus Fault!!!\r\n");
 	while(1);
 }
+void RCCInitialize(void)
+{
+	RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM2, ENABLE);
+	RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA | RCC_APB2Periph_GPIOB | RCC_APB2Periph_GPIOC |
+			RCC_APB2Periph_GPIOD | RCC_APB2Periph_GPIOE | RCC_APB2Periph_GPIOF | RCC_APB2Periph_USART1, ENABLE);
+	RCC_AHBPeriphClockCmd(RCC_AHBPeriph_DMA1 | RCC_AHBPeriph_FSMC, ENABLE);
 
+	/*W6100 SPI initialize*/
+#if defined(SPI_1)
+	RCC_APB2PeriphClockCmd(W6100_SPI_RCC, ENABLE);
+#else
+	RCC_APB1PeriphClockCmd(W6100_SPI_RCC, ENABLE);
+#endif
+}
 
 void timerInitialize(void)
 {
-        RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM2,ENABLE);
 
-        TIM_TimeBaseInitTypeDef TIM_TimeBaseInitStruct;
-        TIM_TimeBaseInitStruct.TIM_Period = 8400-1;
-        TIM_TimeBaseInitStruct.TIM_Prescaler = 1000-1;
-        TIM_TimeBaseInitStruct.TIM_ClockDivision = TIM_CKD_DIV1;
-        TIM_TimeBaseInitStruct.TIM_CounterMode = TIM_CounterMode_Up;
-        TIM_TimeBaseInitStruct.TIM_RepetitionCounter = 0;
-        TIM_TimeBaseInit(TIM2,&TIM_TimeBaseInitStruct);
-        TIM_ITConfig(TIM2,TIM_IT_Update,ENABLE);
-        TIM_SetAutoreload(TIM2,8400-1);
-        TIM_Cmd(TIM2,ENABLE);
+//        RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM2,ENABLE);
+    NVIC_InitTypeDef   NVIC_InitStructure;
 
-        NVIC_InitTypeDef   NVIC_InitStructure;
+    NVIC_InitStructure.NVIC_IRQChannel = TIM2_IRQn;
+    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 1;
+    NVIC_InitStructure.NVIC_IRQChannelSubPriority = 1;
+    NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
+    NVIC_Init(&NVIC_InitStructure);
 
-        NVIC_InitStructure.NVIC_IRQChannel = TIM2_IRQn;
-        NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 1;
-        NVIC_InitStructure.NVIC_IRQChannelSubPriority = 1;
-        NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
-        NVIC_Init(&NVIC_InitStructure);
+	TIM_TimeBaseInitTypeDef TIM_TimeBaseInitStruct;
+	TIM_TimeBaseInitStruct.TIM_Period = 7200-1;
+	TIM_TimeBaseInitStruct.TIM_Prescaler = 100-1;
+	TIM_TimeBaseInitStruct.TIM_ClockDivision = TIM_CKD_DIV1;
+	TIM_TimeBaseInitStruct.TIM_CounterMode = TIM_CounterMode_Up;
+	TIM_TimeBaseInitStruct.TIM_RepetitionCounter = 0;
+	TIM_TimeBaseInit(TIM2,&TIM_TimeBaseInitStruct);
+	TIM_ITConfig(TIM2,TIM_IT_Update,ENABLE);
+
+//	TIM_PrescalerConfig(TIM2, 71, TIM_PSCReloadMode_Immediate);
+    TIM_SetAutoreload(TIM2,7200-1);
+
+	TIM_Cmd(TIM2,ENABLE);
+
+
 }
 
 void TIM2_IRQHandler(void){
@@ -77,6 +100,9 @@ void TIM2_IRQHandler(void){
 
 void TIM2_settimer(void)
 {
+//	uint16_t PrescalerValue = 0;
+//	PrescalerValue = (uint16_t)((SystemCoreClock/2)/72000000 -1);
+//	TIM_PrescalerConfig(TIM2,PrescalerValue,TIM_PSCReloadMode_Immediate);
 	TIM_Cmd(TIM2,DISABLE);
 	globalTimer = 0;
 	TIM_Cmd(TIM2,ENABLE);
@@ -86,7 +112,6 @@ unsigned long TIM2_gettimer(void)
 {
 	return globalTimer;
 }
-
 void clockConfiguration(void)
 {
 
@@ -120,25 +145,25 @@ void gpioInitialize(void)
 
 	GPIO_Init(GPIOA, &GPIO_InitStructure);
 
-	/* GPIO for W5100S initialize */
-	RCC_APB2PeriphClockCmd(W5100S_GPIO_RCC, ENABLE);
+	/* GPIO for W6100 initialize */
+	RCC_APB2PeriphClockCmd(W6100_GPIO_RCC, ENABLE);
 
 	/*For SPI*/
 	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF_PP;
-	GPIO_InitStructure.GPIO_Pin = W5100S_SPI_SCK_PIN | W5100S_SPI_MOSI_PIN | W5100S_SPI_MISO_PIN;
-	GPIO_Init(W5100S_SPI_PORT, &GPIO_InitStructure);
+	GPIO_InitStructure.GPIO_Pin = W6100_SPI_SCK_PIN | W6100_SPI_MOSI_PIN | W6100_SPI_MISO_PIN;
+	GPIO_Init(W6100_SPI_PORT, &GPIO_InitStructure);
 
 	RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOD, ENABLE);
 
 	/*For CS*/
 	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_PP;
-	GPIO_InitStructure.GPIO_Pin = W5100S_CS_PIN;
-	GPIO_Init(W5100S_CS_PORT, &GPIO_InitStructure);
+	GPIO_InitStructure.GPIO_Pin = W6100_CS_PIN;
+	GPIO_Init(W6100_CS_PORT, &GPIO_InitStructure);
 
 	/*For Reset*/
 	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_PP;
-	GPIO_InitStructure.GPIO_Pin = W5100S_RESET_PIN;
-	GPIO_Init(W5100S_RESET_PORT, &GPIO_InitStructure);
+	GPIO_InitStructure.GPIO_Pin = W6100_RESET_PIN;
+	GPIO_Init(W6100_RESET_PORT, &GPIO_InitStructure);
 /*
 	  RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOC, ENABLE);
 	  GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
@@ -148,7 +173,7 @@ void gpioInitialize(void)
 
 	  GPIO_WriteBit(GPIOC,GPIO_Pin_6,SET);
 */
-	/*For W5100S interrupt*/
+	/*For W6100 interrupt*/
 
 	/* Enable SYSCFG clock */
 	//RCC_APB2PeriphClockCmd(RCC_APB2Periph_SYSCFG, ENABLE);
@@ -174,8 +199,8 @@ void gpioInitialize(void)
 //	GPIO_InitStructure.GPIO_OType = GPIO_OType_OD;
 //	GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_UP;
 //	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IN;
-//	GPIO_InitStructure.GPIO_Pin = W5100S_INT_PIN;
-//	GPIO_Init(W5100S_INT_PORT, &GPIO_InitStructure);
+//	GPIO_InitStructure.GPIO_Pin = W6100_INT_PIN;
+//	GPIO_Init(W6100_INT_PORT, &GPIO_InitStructure);
 }
 
 void usartInitialize(void)
@@ -214,8 +239,8 @@ void usartInitialize(void)
 
 void spiInitailize(void)
 {
-	/*W5100S SPI initialize*/
-	RCC_APB1PeriphClockCmd(W5100S_SPI_RCC, ENABLE);
+	/*W6100 SPI initialize*/
+	RCC_APB1PeriphClockCmd(W6100_SPI_RCC, ENABLE);
 
 	SPI_InitTypeDef SPI_InitStructure;
 	SPI_InitStructure.SPI_Direction = SPI_Direction_2Lines_FullDuplex;
@@ -223,15 +248,50 @@ void spiInitailize(void)
 	SPI_InitStructure.SPI_CPOL = SPI_CPOL_High;
 	SPI_InitStructure.SPI_CPHA = SPI_CPHA_2Edge;
 	SPI_InitStructure.SPI_NSS = SPI_NSS_Soft;
-	SPI_InitStructure.SPI_BaudRatePrescaler = SPI_BaudRatePrescaler_4;
+	SPI_InitStructure.SPI_BaudRatePrescaler = SPI_BaudRatePrescaler_2;//SPI_BaudRatePrescaler_4;
 	SPI_InitStructure.SPI_FirstBit = SPI_FirstBit_MSB;
 	SPI_InitStructure.SPI_CRCPolynomial = 7;
 	/* Initializes the SPI communication */
 	SPI_InitStructure.SPI_Mode = SPI_Mode_Master;
 
-	SPI_Init(W5100S_SPI, &SPI_InitStructure);
+	SPI_Init(W6100_SPI, &SPI_InitStructure);
 
-	SPI_Cmd(W5100S_SPI,ENABLE);
+	SPI_Cmd(W6100_SPI,ENABLE);
+#if defined SPI_DMA
+	SPI_I2S_DMACmd(W6100_SPI, SPI_I2S_DMAReq_Rx | SPI_I2S_DMAReq_Tx , ENABLE);
+/* DMA SPI RX Channel */
+	DMA_RX_InitStructure.DMA_BufferSize = 0; //default
+	DMA_RX_InitStructure.DMA_DIR = DMA_DIR_PeripheralSRC;
+	DMA_RX_InitStructure.DMA_M2M = DMA_M2M_Disable;
+	DMA_RX_InitStructure.DMA_MemoryBaseAddr = 0;
+	DMA_RX_InitStructure.DMA_MemoryDataSize = DMA_MemoryDataSize_Byte;
+	DMA_RX_InitStructure.DMA_MemoryInc = DMA_MemoryInc_Enable;
+	DMA_RX_InitStructure.DMA_Mode = DMA_Mode_Normal;
+
+	DMA_RX_InitStructure.DMA_PeripheralBaseAddr = (uint32_t)(&(W6100_SPI->DR));
+	DMA_RX_InitStructure.DMA_PeripheralDataSize = DMA_PeripheralDataSize_Byte;
+	DMA_RX_InitStructure.DMA_PeripheralInc = DMA_PeripheralInc_Disable;
+	DMA_RX_InitStructure.DMA_Priority = DMA_Priority_High;
+
+	DMA_Init(W6100_DMA_CHANNEL_RX, &DMA_RX_InitStructure);
+
+
+	/* DMA SPI TX Channel */
+	DMA_TX_InitStructure.DMA_BufferSize = 0;
+	DMA_TX_InitStructure.DMA_DIR = DMA_DIR_PeripheralDST;
+	DMA_TX_InitStructure.DMA_M2M = DMA_M2M_Disable;
+	DMA_TX_InitStructure.DMA_MemoryBaseAddr = 0;
+	DMA_TX_InitStructure.DMA_MemoryDataSize = DMA_MemoryDataSize_Byte;
+	DMA_TX_InitStructure.DMA_MemoryInc = DMA_MemoryInc_Enable;
+	DMA_TX_InitStructure.DMA_Mode = DMA_Mode_Normal;
+
+	DMA_TX_InitStructure.DMA_PeripheralBaseAddr = (uint32_t)(&(W6100_SPI->DR));
+	DMA_TX_InitStructure.DMA_PeripheralDataSize = DMA_PeripheralDataSize_Byte;
+	DMA_TX_InitStructure.DMA_PeripheralInc = DMA_PeripheralInc_Disable;
+	DMA_TX_InitStructure.DMA_Priority = DMA_Priority_High;
+
+	DMA_Init(W6100_DMA_CHANNEL_TX, &DMA_TX_InitStructure);
+#endif
 }
 
 void FSMCInitialize(void)
@@ -311,6 +371,32 @@ void FSMCInitialize(void)
 #endif
 	//FSMCLowSpeed();
 	FSMCHighSpeed();
+#ifdef BUS_DMA
+	/* DMA MEM TX Channel */
+	DMA_TX_InitStructure.DMA_BufferSize = 0; //default
+	DMA_TX_InitStructure.DMA_DIR = DMA_DIR_PeripheralSRC;
+	DMA_TX_InitStructure.DMA_M2M = DMA_M2M_Enable;
+	DMA_TX_InitStructure.DMA_MemoryBaseAddr = 0;
+	DMA_TX_InitStructure.DMA_PeripheralBaseAddr =0;
+	DMA_TX_InitStructure.DMA_MemoryDataSize = DMA_MemoryDataSize_Byte;
+	DMA_TX_InitStructure.DMA_PeripheralDataSize = DMA_PeripheralDataSize_Byte;
+	DMA_TX_InitStructure.DMA_PeripheralInc  = DMA_PeripheralInc_Enable;
+	DMA_TX_InitStructure.DMA_MemoryInc = DMA_MemoryInc_Disable;
+	DMA_TX_InitStructure.DMA_Mode = DMA_Mode_Normal;
+	DMA_Init(W6100_DMA_CHANNEL_TX, &DMA_TX_InitStructure);
+	/* DMA MEM RX Channel */
+	DMA_RX_InitStructure.DMA_BufferSize = 0; //default
+	DMA_RX_InitStructure.DMA_DIR = DMA_DIR_PeripheralSRC;
+	DMA_RX_InitStructure.DMA_M2M = DMA_M2M_Enable;
+	DMA_RX_InitStructure.DMA_MemoryBaseAddr = 0;
+	DMA_RX_InitStructure.DMA_PeripheralBaseAddr =0;
+	DMA_RX_InitStructure.DMA_MemoryDataSize = DMA_MemoryDataSize_Byte;
+	DMA_RX_InitStructure.DMA_PeripheralDataSize = DMA_PeripheralDataSize_Byte;
+	DMA_RX_InitStructure.DMA_PeripheralInc  = DMA_PeripheralInc_Disable;
+	DMA_RX_InitStructure.DMA_MemoryInc = DMA_MemoryInc_Enable;
+	DMA_RX_InitStructure.DMA_Mode = DMA_Mode_Normal;
+	DMA_Init(W6100_DMA_CHANNEL_RX, &DMA_RX_InitStructure);
+#endif
 }
 
 void FSMCLowSpeed()
@@ -365,6 +451,7 @@ void FSMCHighSpeed()
 	p.FSMC_DataLatency = 0;
 	p.FSMC_AccessMode = FSMC_AccessMode_B;
 
+
 	FSMC_NORSRAMInitStructure.FSMC_Bank = FSMC_Bank1_NORSRAM1;
 	FSMC_NORSRAMInitStructure.FSMC_DataAddressMux = FSMC_DataAddressMux_Enable;
 	FSMC_NORSRAMInitStructure.FSMC_MemoryType = FSMC_MemoryType_NOR;
@@ -385,5 +472,6 @@ void FSMCHighSpeed()
 
 	/*!< Enable FSMC Bank1_SRAM1 Bank */
 	FSMC_NORSRAMCmd(FSMC_Bank1_NORSRAM1, ENABLE);
-}
 
+
+}

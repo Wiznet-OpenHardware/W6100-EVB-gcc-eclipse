@@ -5,7 +5,7 @@ void clockConfiguration(void);
 void gpioInitialize(void);
 void usartInitialize(void);
 void spiInitailize(void);
-
+void RCCInitialize(void);
 /*sample code*/
 uint8_t dataRead(void);
 void wrDisable(void);
